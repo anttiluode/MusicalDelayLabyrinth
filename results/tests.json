@@ -1,0 +1,108 @@
+{
+ "date": "2026-11-13T18:34:45.347Z",
+ "checks": [
+  {
+   "name": "Engine in index.html is byte-identical to src/engine.js",
+   "pass": true
+  },
+  {
+   "name": "Same seed + same song gives identical delays and weights",
+   "pass": true,
+   "a": "72c07d817d7b",
+   "b": "72c07d817d7b"
+  },
+  {
+   "name": "Bounded under loud noise at memory 0.99, and fades in silence",
+   "pass": true,
+   "peak": 0.26,
+   "rms0to30s": 0.0034,
+   "rms25to30s": 2.99e-8
+  },
+  {
+   "name": "Corridors retime onto the groove (more within 15 ms of the half-beat grid after 60 s, every run)",
+   "pass": true
+  },
+  {
+   "name": "After the song stops, a learned labyrinth keeps the beat (tail onsets repeat more on-beat than off-beat, every run)",
+   "pass": true
+  },
+  {
+   "name": "...and more than the same labyrinth that did not learn (every run)",
+   "pass": false
+  }
+ ],
+ "runs": [
+  {
+   "seed": 7,
+   "bpm": 96,
+   "corridors": 58,
+   "within15msBefore": 4,
+   "within15msAfter": 50,
+   "goldAfter": 50,
+   "tailOnBeat": 0.343,
+   "tailOffBeat": 0.015,
+   "controlOnBeat": 0.154,
+   "controlOffBeat": 0.145
+  },
+  {
+   "seed": 7,
+   "bpm": 120,
+   "corridors": 58,
+   "within15msBefore": 8,
+   "within15msAfter": 33,
+   "goldAfter": 44,
+   "tailOnBeat": 0.304,
+   "tailOffBeat": 0.047,
+   "controlOnBeat": 0.252,
+   "controlOffBeat": 0.147
+  },
+  {
+   "seed": 11,
+   "bpm": 96,
+   "corridors": 58,
+   "within15msBefore": 2,
+   "within15msAfter": 48,
+   "goldAfter": 51,
+   "tailOnBeat": 0.125,
+   "tailOffBeat": 0.003,
+   "controlOnBeat": 0.177,
+   "controlOffBeat": 0.125
+  },
+  {
+   "seed": 11,
+   "bpm": 120,
+   "corridors": 58,
+   "within15msBefore": 8,
+   "within15msAfter": 48,
+   "goldAfter": 44,
+   "tailOnBeat": 0.086,
+   "tailOffBeat": 0.01,
+   "controlOnBeat": 0.108,
+   "controlOffBeat": 0.031
+  },
+  {
+   "seed": 23,
+   "bpm": 96,
+   "corridors": 58,
+   "within15msBefore": 6,
+   "within15msAfter": 32,
+   "goldAfter": 36,
+   "tailOnBeat": 0.324,
+   "tailOffBeat": 0.022,
+   "controlOnBeat": 0.156,
+   "controlOffBeat": 0.072
+  },
+  {
+   "seed": 23,
+   "bpm": 120,
+   "corridors": 58,
+   "within15msBefore": 4,
+   "within15msAfter": 24,
+   "goldAfter": 31,
+   "tailOnBeat": 0.338,
+   "tailOffBeat": 0.027,
+   "controlOnBeat": 0.237,
+   "controlOffBeat": 0.172
+  }
+ ]
+}

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Musical Delay Labyrinth</title>
+<meta name="theme-color" content="#07090f">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Spline+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--night:#07090f;--stone:#1b1f2b;--ink:#e8e4da;--muted:#9a97a6;--gold:#ffcf7a;--violet:#8f86ff;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--night);color:var(--ink);font:14px/1.45 "Spline Sans",system-ui,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#title{position:fixed;left:26px;top:18px;pointer-events:none;max-width:560px}
+#title h1{font:400 36px/1 "Instrument Serif",Georgia,serif;margin:0 0 6px}
+#title p{margin:0;color:var(--muted);font-size:13px}
+#state{position:fixed;right:26px;top:22px;text-align:right;color:var(--muted);font-size:13px;pointer-events:none}
+#state b{display:block;font:400 26px/1.1 "Instrument Serif",Georgia,serif;color:var(--gold)}
+#bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:center;background:#0d1019e6;border:1px solid #262a38;border-radius:12px;padding:10px 14px;max-width:calc(100% - 24px)}
+.grp{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.grp+.grp{border-left:1px solid #262a38;padding-left:14px}
+button{font:inherit;font-size:13px;color:var(--ink);background:#161a26;border:1px solid #2b3042;border-radius:7px;padding:6px 10px;cursor:pointer;user-select:none}
+button:hover{border-color:#454b63}
+button.on{border-color:var(--gold);color:#fff1cf;background:#22201a}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;user-select:none}
+input[type=range]{width:92px;accent-color:var(--gold)}
+#help{position:fixed;left:26px;bottom:92px;color:var(--muted);font-size:12.5px;max-width:300px;pointer-events:none}
+#toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:#0d1019ee;border:1px solid #2b3042;border-radius:8px;padding:8px 14px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:70%}
+#toast.on{opacity:1}
+#begin{position:fixed;inset:0;display:grid;place-items:center;background:#07090fcc;z-index:4}
+#begin div{max-width:440px;text-align:center;padding:24px}
+#begin p{font:400 22px/1.35 "Instrument Serif",Georgia,serif}
+#begin small{display:block;color:var(--muted);font-size:13px;margin-top:10px}
+#begin button{font-size:15px;padding:10px 22px;border-color:var(--gold);margin-top:8px}
+@media (max-width:760px){#title h1{font-size:26px}#title p,#help{display:none}#state{top:60px;left:26px;right:auto;text-align:left}.grp+.grp{border-left:0;padding-left:0}}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style></head><body>
+<canvas id="cv" aria-label="The labyrinth. Light moving along a corridor is sound travelling through it."></canvas>
+<div id="title"><h1>Musical Delay Labyrinth</h1><p>Every corridor is a delay. A corridor's length is how long sound takes to walk it. Corridors whose echoes land on the beat turn gold, retime themselves to it and take more of the sound. Click a room to drop a pebble in; Walls opens or closes corridors; Gate moves where the song enters.</p></div>
+<div id="state"><b id="sBig">listening</b><span id="sSmall"></span></div>
+<div id="bar">
+  <div class="grp"><button id="g96">Groove 96</button><button id="g120">Groove 120</button><button id="file">Your song…</button><button id="mic">Microphone</button><button id="stop" class="on">Silence</button><input id="fileIn" type="file" accept="audio/*" hidden></div>
+  <div class="grp" id="tools"><button data-t="pebble" class="on">Pebble</button><button data-t="walls">Walls</button><button data-t="gate">Gate</button></div>
+  <div class="grp"><label>Memory<input id="rho" type="range" min="0.8" max="0.99" step="0.005" value="0.96"></label><label>Song<input id="dry" type="range" min="0" max="1" step="0.01" value="0.35"></label><label>Volume<input id="vol" type="range" min="0" max="2" step="0.01" value="1"></label></div>
+  <div class="grp"><label><input id="learn" type="checkbox" checked> Learns</label><button id="newlab">New labyrinth</button></div>
+</div>
+<div id="toast" role="status"></div>
+<div id="begin"><div><p>A labyrinth of echoes. Play it a groove and it will learn to answer in time.</p><button id="go">Start sound</button><small>Headphones are best. The left of the maze plays in your left ear.</small></div></div>
+
+<script id="ml-engine"></script>
+<script id="ml-worklet" type="text/plain">
+class MLProc extends AudioWorkletProcessor {
+  constructor(o) { super(); const p = o.processorOptions || {}; this.lab = new ML.Lab(p.seed || 7, sampleRate, p.P || {}); this.gain = 2.6; this.n = 0;
+    this.port.onmessage = e => this.cmd(e.data); }
+  cmd(m) { const L = this.lab;
+    if (m.t === 'poke') L.poke(m.room, m.amp || 0.8);
+    else if (m.t === 'toggle') { const has = L.cors.some(c => (c.a === m.a && c.b === m.b) || (c.a === m.b && c.b === m.a)); if (has) L.close(m.a, m.b); else L.open(m.a, m.b, ML.MIND + 0.1 + Math.random() * 1.25); }
+    else if (m.t === 'gate') L.gate = m.room;
+    else if (m.t === 'params') { Object.assign(L.P, m.p); L.renorm(); }
+    else if (m.t === 'reseed') { const P = L.P; this.lab = new ML.Lab(m.seed, sampleRate, { rho: P.rho, learn: P.learn }); }
+    this.post(); }
+  post() { this.port.postMessage(this.lab.snapshot(24)); }
+  process(inputs, outputs) {
+    const inp = inputs[0] && inputs[0][0], o = outputs[0], L = o[0], R = o[1] || o[0], n = L.length;
+    this.lab.process(inp || null, L, R, n);
+    for (let i = 0; i < n; i++) { L[i] = soft(L[i] * this.gain); if (R !== L) R[i] = soft(R[i] * this.gain); }
+    this.n += n; if (this.n >= sampleRate / 30) { this.n = 0; this.post(); }
+    return true;
+  }
+}
+function soft(x) { if (x > 3) return 1; if (x < -3) return -1; return x * (27 + x * x) / (27 + 9 * x * x); }
+registerProcessor('ml', MLProc);
+</script>
+<script>
+'use strict';
+(() => {
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+let seed = +params.get('seed') || 7;
+let local = new ML.Lab(seed, 48000), S = local.snapshot(24);
+let ctx = null, node = null, dryG, outG, src = null, micStream = null, songEndedAt = null, playing = false;
+
+// ---------- drawing ----------
+const cv = $('cv'), g = cv.getContext('2d');
+let W = 0, H = 0, dpr = 1, cell = 80, ox = 0, oy = 0;
+function layout() { dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); fit(); }
+function fit() { const C = S.C, R = S.R, top = W < 760 ? 120 : 160, bottom = W < 760 ? 210 : 140;
+  cell = Math.min((W - 60) / C, (H - top - bottom) / R); ox = (W - cell * C) / 2 + cell / 2; oy = top + (H - top - bottom - cell * R) / 2 + cell / 2; }
+addEventListener('resize', layout);
+const roomXY = i => { const C = S.C; return [ox + (i % C) * cell, oy + Math.floor(i / C) * cell]; };
+// a sprite for glows
+const spr = document.createElement('canvas'); spr.width = spr.height = 64; { const s = spr.getContext('2d'), gr = s.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); s.fillStyle = gr; s.fillRect(0, 0, 64, 64); }
+const tinted = {}; function glow(color) { if (tinted[color]) return tinted[color]; const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  x.drawImage(spr, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, 64, 64); return tinted[color] = c; }
+const hueOf = f => (((Math.log2(f / 110) % 1) + 1) % 1) * 300 + 20;
+function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+const GOLD = [255, 207, 122], VIOLET = [143, 134, 255];
+// corridor path: a meander whose length grows with the delay
+function path(a, b, D, flip) {
+  const [x0, y0] = roomXY(a), [x1, y1] = roomXY(b), dx = x1 - x0, dy = y1 - y0, s = Math.hypot(dx, dy), nx = -dy / s, ny = dx / s;
+  const Lw = s * Math.max(1, 0.55 + D / 0.75), m = 3, amp = Math.min(cell * 0.3, Math.sqrt(Math.max(0, Lw * Lw - s * s) * 2) / (Math.PI * m)) * (flip ? -1 : 1);
+  const pts = []; const N = 40, r0 = cell * 0.17;
+  for (let k = 0; k <= N; k++) { const u = k / N, taper = Math.sin(Math.PI * u), off = amp * Math.sin(Math.PI * m * u) * taper;
+    pts.push([x0 + dx * u + nx * off, y0 + dy * u + ny * off]); }
+  return pts;
+}
+const at = (pts, f) => { const k = Math.min(pts.length - 1.001, Math.max(0, f * (pts.length - 1))), i = Math.floor(k), t = k - i; return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t]; };
+let eMax = 1e-4, hover = null, tool = 'pebble';
+function draw() {
+  fit();
+  g.globalCompositeOperation = 'source-over';
+  const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7); bg.addColorStop(0, '#0d1120'); bg.addColorStop(1, '#05060b');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const C = S.C, R = S.R, has = new Set(S.cors.map(c => Math.min(c.a, c.b) + ',' + Math.max(c.a, c.b)));
+  // floor stones
+  g.fillStyle = '#10131d'; for (let i = 0; i < C * R; i++) { const [x, y] = roomXY(i); g.fillRect(x - cell * .47, y - cell * .47, cell * .94, cell * .94); }
+  // walls where there is no corridor
+  g.strokeStyle = '#2c3142'; g.lineWidth = Math.max(2, cell * 0.07); g.lineCap = 'round';
+  g.beginPath();
+  for (let i = 0; i < C * R; i++) { const x = i % C, y = Math.floor(i / C), [px, py] = roomXY(i);
+    if (x < C - 1 && !has.has(i + ',' + (i + 1))) { g.moveTo(px + cell / 2, py - cell / 2); g.lineTo(px + cell / 2, py + cell / 2); }
+    if (y < R - 1 && !has.has(i + ',' + (i + C))) { g.moveTo(px - cell / 2, py + cell / 2); g.lineTo(px + cell / 2, py + cell / 2); } }
+  g.rect(ox - cell / 2, oy - cell / 2, cell * C, cell * R); g.stroke();
+  // corridors
+  let mx = 1e-6; for (const c of S.cors) for (const v of c.eab) mx = Math.max(mx, v); for (const c of S.cors) for (const v of c.eba) mx = Math.max(mx, v);
+  eMax = Math.max(mx, eMax * 0.985);
+  for (const c of S.cors) {
+    const D = (c.Dab + c.Dba) / 2, w = (c.wab + c.wba) / 2, pts = path(c.a, c.b, D, (c.a + c.b) % 2 === 1), col = mix(VIOLET, GOLD, Math.min(1, w * 1.4));
+    g.globalCompositeOperation = 'source-over'; g.strokeStyle = '#191d2a'; g.lineWidth = cell * 0.11; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
+    g.strokeStyle = `rgba(${col},${0.12 + 0.55 * w})`; g.lineWidth = cell * 0.025 + cell * 0.03 * w; g.stroke();
+    g.globalCompositeOperation = 'lighter';
+    const sprC = glow(`rgb(${col})`);
+    const n = c.eab.length;
+    for (let k = 0; k < n; k++) for (const [arr, f] of [[c.eab, (k + 0.5) / n], [c.eba, 1 - (k + 0.5) / n]]) {
+      const v = Math.min(1, 1 + Math.log10(arr[k] / eMax + 1e-9) / 2.2); if (v < 0.04) continue;   // 44 dB of visible range
+      const [x, y] = at(pts, f), r = cell * (0.05 + 0.15 * v); g.globalAlpha = 0.12 + 0.6 * v * v; g.drawImage(sprC, x - r, y - r, 2 * r, 2 * r); }
+    g.globalAlpha = 1;
+  }
+  // rooms
+  let rmx = 1e-6; for (const r of S.rooms) rmx = Math.max(rmx, r.env);
+  S.rooms.forEach((r, i) => { const [x, y] = roomXY(i), h = hueOf(r.f), v = Math.max(0, Math.min(1, 1 + Math.log10(r.env / rmx + 1e-9) / 2));
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#0b0e17'; g.beginPath(); g.arc(x, y, cell * 0.17, 0, 7); g.fill();
+    g.strokeStyle = `hsla(${h},70%,${55 + 20 * v}%,${0.35 + 0.65 * v})`; g.lineWidth = 1.5 + 2 * v; g.stroke();
+    g.globalCompositeOperation = 'lighter'; const rr = cell * (0.18 + 0.28 * v); g.globalAlpha = 0.15 + 0.6 * v; g.drawImage(glow(`hsl(${h},80%,60%)`), x - rr, y - rr, 2 * rr, 2 * rr); g.globalAlpha = 1;
+    if (i === S.gate) { g.globalCompositeOperation = 'source-over'; g.strokeStyle = '#ffcf7a'; g.setLineDash([3, 4]); g.beginPath(); g.arc(x, y, cell * 0.25, 0, 7); g.stroke(); g.setLineDash([]);
+      g.fillStyle = '#ffcf7a'; g.font = `12px "Spline Sans",sans-serif`; g.textAlign = 'center'; g.fillText('the song enters', x, y - cell * 0.3); }
+  });
+  // hover hint
+  if (hover) { g.globalCompositeOperation = 'source-over'; g.strokeStyle = '#ffffff66'; g.lineWidth = 1.5;
+    if (hover.room != null) { const [x, y] = roomXY(hover.room); g.beginPath(); g.arc(x, y, cell * 0.22, 0, 7); g.stroke(); }
+    else if (hover.pair) { const [a, b] = hover.pair, [x0, y0] = roomXY(a), [x1, y1] = roomXY(b); g.setLineDash([4, 4]); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); g.setLineDash([]); } }
+  readout();
+  requestAnimationFrame(draw);
+}
+function readout() {
+  const n = S.cors.length * 2, gold = S.cors.reduce((s, c) => s + (c.wab > 0.6) + (c.wba > 0.6), 0);
+  if (playing) { $('sBig').textContent = `${gold} of ${n} in time`; $('sSmall').textContent = `listening ${Math.round(S.heard)} s`; }
+  else if (songEndedAt != null) { $('sBig').textContent = `still singing`; $('sSmall').textContent = `${((performance.now() - songEndedAt) / 1000).toFixed(0)} s after the song stopped · ${gold} of ${n} in time`; }
+  else { $('sBig').textContent = `${gold} of ${n} in time`; $('sSmall').textContent = 'corridors whose echoes land on the beat'; }
+}
+let toastT = 0; function toast(m, ms = 3200) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); }
+
+// ---------- picking ----------
+function pick(ex, ey) {
+  const C = S.C, R = S.R, fx = (ex - ox) / cell, fy = (ey - oy) / cell, ix = Math.round(fx), iy = Math.round(fy);
+  if (ix < 0 || iy < 0 || ix >= C || iy >= R) return null;
+  const dx = fx - ix, dy = fy - iy;
+  if (Math.hypot(dx, dy) < 0.28 || tool !== 'walls') return { room: iy * C + ix };
+  if (Math.abs(dx) > Math.abs(dy)) { const j = dx > 0 ? ix + 1 : ix - 1; if (j < 0 || j >= C) return null; return { pair: [iy * C + ix, iy * C + j] }; }
+  const j = dy > 0 ? iy + 1 : iy - 1; if (j < 0 || j >= R) return null; return { pair: [iy * C + ix, j * C + ix] };
+}
+cv.addEventListener('pointermove', e => { hover = pick(e.clientX, e.clientY); });
+cv.addEventListener('pointerleave', () => hover = null);
+cv.addEventListener('pointerdown', e => { const p = pick(e.clientX, e.clientY); if (!p) return;
+  if (!node) return toast('Press Start sound first.');
+  if (tool === 'pebble' && p.room != null) send({ t: 'poke', room: p.room, amp: 0.9 });
+  else if (tool === 'gate' && p.room != null) { send({ t: 'gate', room: p.room }); toast('The song now enters here.'); }
+  else if (tool === 'walls' && p.pair) send({ t: 'toggle', a: p.pair[0], b: p.pair[1] }); });
+document.querySelectorAll('#tools button').forEach(b => b.onclick = () => { tool = b.dataset.t; document.querySelectorAll('#tools button').forEach(x => x.classList.toggle('on', x === b)); });
+
+// ---------- sound ----------
+const engineSrc = $('ml-engine').textContent;
+function send(m) { if (node) node.port.postMessage(m); }
+async function start() {
+  ctx = new AudioContext({ latencyHint: 'interactive' });
+  const code = engineSrc + '\n' + $('ml-worklet').textContent;
+  const within = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(Error('timed out')), ms))]);
+  try { await within(ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'application/javascript' }))), 4000); }
+  catch (e) { await within(ctx.audioWorklet.addModule('data:application/javascript;charset=utf-8,' + encodeURIComponent(code)), 6000); }
+  node = new AudioWorkletNode(ctx, 'ml', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { seed, P: { rho: +$('rho').value, learn: $('learn').checked ? 1 : 0 } } });
+  node.port.onmessage = e => { S = e.data; };
+  outG = ctx.createGain(); outG.gain.value = +$('vol').value; node.connect(outG).connect(ctx.destination);
+  dryG = ctx.createGain(); dryG.gain.value = +$('dry').value; dryG.connect(ctx.destination);
+  $('begin').remove(); toast('Play it a groove, or click a room to drop a pebble.');
+}
+$('go').onclick = () => { $('go').disabled = true; $('go').textContent = 'Starting…'; start().catch(err => { $('go').textContent = 'Sound could not start: ' + err.message; }); };
+function stopSrc(ended) {
+  if (src) { try { src.stop && src.stop(); } catch (e) {} src.disconnect(); src = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (playing) songEndedAt = performance.now(); playing = false;
+  ['g96', 'g120', 'file', 'mic', 'stop'].forEach(id => $(id).classList.remove('on')); $('stop').classList.add('on');
+}
+function playBuf(buf, id, msg, loop) { stopSrc(); songEndedAt = null; const s = ctx.createBufferSource(); s.buffer = buf; s.loop = loop; s.connect(node); s.connect(dryG); s.start(); src = s; playing = true;
+  $('stop').classList.remove('on'); $(id).classList.add('on'); toast(msg);
+  s.onended = () => { if (src === s) { stopSrc(); toast('The song ended. Listen: the labyrinth keeps its time.'); } }; }
+function groove(bpm, id) { if (!node) return toast('Press Start sound first.'); const x = ML.makeGroove(bpm, 45, ctx.sampleRate), b = ctx.createBuffer(1, x.length, ctx.sampleRate); b.copyToChannel(x, 0);
+  playBuf(b, id, `A ${bpm} BPM groove, 45 s. Watch corridors turn gold as their echoes find the beat.`, false); }
+$('g96').onclick = () => groove(96, 'g96'); $('g120').onclick = () => groove(120, 'g120');
+$('file').onclick = () => { if (!node) return toast('Press Start sound first.'); $('fileIn').click(); };
+$('fileIn').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const b = await ctx.decodeAudioData(await f.arrayBuffer()); playBuf(b, 'file', f.name + ' is walking the labyrinth.', false); } catch (err) { toast('That file could not be decoded as audio.'); } e.target.value = ''; };
+$('mic').onclick = async () => { if (!node) return toast('Press Start sound first.');
+  try { stopSrc(); songEndedAt = null; micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    src = ctx.createMediaStreamSource(micStream); src.connect(node); playing = true; $('stop').classList.remove('on'); $('mic').classList.add('on'); toast('Listening to the microphone. Use headphones, or the labyrinth will hear itself.'); }
+  catch (err) { toast('Microphone not available: ' + err.message); } };
+$('stop').onclick = () => stopSrc();
+$('rho').oninput = e => send({ t: 'params', p: { rho: +e.target.value } });
+$('learn').onchange = e => send({ t: 'params', p: { learn: e.target.checked ? 1 : 0 } });
+$('dry').oninput = e => { if (dryG) dryG.gain.value = +e.target.value; };
+$('vol').oninput = e => { if (outG) outG.gain.value = +e.target.value; };
+$('newlab').onclick = () => { seed = Math.floor(Math.random() * 99999) + 1; if (node) send({ t: 'reseed', seed }); else { local = new ML.Lab(seed, 48000); S = local.snapshot(24); } toast(`A new labyrinth (seed ${seed}).`); };
+
+layout(); requestAnimationFrame(draw);
+window.__ml = { get S() { return S; }, send };
+})();
+</script>
+</body></html>
